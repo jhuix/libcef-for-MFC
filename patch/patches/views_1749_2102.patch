@@ -1,0 +1,575 @@
+diff --git ui/base/models/menu_model.h ui/base/models/menu_model.h
+index 0755f2752f1d..0322b8c638e7 100644
+--- ui/base/models/menu_model.h
++++ ui/base/models/menu_model.h
+@@ -15,6 +15,7 @@
+ namespace gfx {
+ class FontList;
+ class Image;
++class Point;
+ }
+ 
+ namespace ui {
+@@ -115,6 +116,27 @@ class UI_BASE_EXPORT MenuModel {
+   // |event_flags| is a bit mask of ui::EventFlags.
+   virtual void ActivatedAt(int index, int event_flags);
+ 
++  // Called when the user moves the mouse outside the menu and over the owning
++  // window.
++  virtual void MouseOutsideMenu(const gfx::Point& screen_point) {}
++
++  // Called on unhandled open/close submenu keyboard commands. |is_rtl| will be
++  // true if the menu is displaying a right-to-left language.
++  virtual void UnhandledOpenSubmenu(bool is_rtl) {}
++  virtual void UnhandledCloseSubmenu(bool is_rtl) {}
++
++  // Override the text/background color of a given menu item dependent on the
++  // |index| and its |is_hovered| state. |is_minor| will be true for accelerator
++  // text. Returns true if it chooses to override the color.
++  virtual bool GetTextColor(int index,
++                            bool is_minor,
++                            bool is_hovered,
++                            SkColor* override_color) const { return false; }
++  virtual bool GetBackgroundColor(int index,
++                                  bool is_hovered,
++                                  SkColor* override_color) const
++                                  { return false; }
++
+   // Called when the menu is about to be shown.
+   virtual void MenuWillShow() {}
+ 
+diff --git ui/gfx/render_text.cc ui/gfx/render_text.cc
+index b5f58764ecb9..37359d823c57 100644
+--- ui/gfx/render_text.cc
++++ ui/gfx/render_text.cc
+@@ -513,6 +513,14 @@ void RenderText::SetElideBehavior(ElideBehavior elide_behavior) {
+   }
+ }
+ 
++void RenderText::SetDrawStringsFlags(int flags) {
++  if (draw_strings_flags_ == flags)
++    return;
++  draw_strings_flags_ = flags;
++  cached_bounds_and_offset_valid_ = false;
++  OnTextAttributeChanged();
++}
++
+ void RenderText::SetDisplayRect(const Rect& r) {
+   if (r != display_rect_) {
+     display_rect_ = r;
+@@ -1465,6 +1473,19 @@ void RenderText::OnTextAttributeChanged() {
+   if (!multiline_ && replace_newline_chars_with_symbols_)
+     base::ReplaceChars(layout_text_, kNewline, kNewlineSymbol, &layout_text_);
+ 
++  if (draw_strings_flags_ != 0) {
++    // Compute layout size with the mnemonic character underlined since it might
++    // be larger than with the underline hidden.
++    int char_pos = -1;
++    int char_span = 0;
++    layout_text_ =
++        gfx::RemoveAcceleratorChar(layout_text_, '&', &char_pos, &char_span);
++    if (char_pos != -1) {
++      gfx::Range range(char_pos, char_pos + char_span);
++      styles_[gfx::UNDERLINE].ApplyValue(true, range);
++    }
++  }
++
+   OnLayoutTextAttributeChanged(true);
+ }
+ 
+diff --git ui/gfx/render_text.h ui/gfx/render_text.h
+index 0b8b82a2bc80..f0eba4248c56 100644
+--- ui/gfx/render_text.h
++++ ui/gfx/render_text.h
+@@ -293,6 +293,10 @@ class GFX_EXPORT RenderText {
+   void SetElideBehavior(ElideBehavior elide_behavior);
+   ElideBehavior elide_behavior() const { return elide_behavior_; }
+ 
++  // Get or set the flags that control display of accelerator characters.
++  void SetDrawStringsFlags(int flags);
++  int draw_strings_flags() const { return draw_strings_flags_; }
++
+   const Rect& display_rect() const { return display_rect_; }
+   void SetDisplayRect(const Rect& r);
+ 
+@@ -850,6 +854,8 @@ class GFX_EXPORT RenderText {
+   // Extra spacing placed between glyphs; used for obscured text styling.
+   int glyph_spacing_ = 0;
+ 
++  int draw_strings_flags_ = 0;
++
+   DISALLOW_COPY_AND_ASSIGN(RenderText);
+ };
+ 
+diff --git ui/views/animation/ink_drop_host_view.h ui/views/animation/ink_drop_host_view.h
+index 8ac475fa752c..ec58c2b28441 100644
+--- ui/views/animation/ink_drop_host_view.h
++++ ui/views/animation/ink_drop_host_view.h
+@@ -67,6 +67,8 @@ class VIEWS_EXPORT InkDropHostView : public View, public InkDropHost {
+   // them.
+   void AnimateInkDrop(InkDropState state, const ui::LocatedEvent* event);
+ 
++  InkDropMode ink_drop_mode() const { return ink_drop_mode_; }
++
+  protected:
+   static constexpr int kInkDropSmallCornerRadius = 2;
+   static constexpr int kInkDropLargeCornerRadius = 4;
+diff --git ui/views/controls/button/label_button.cc ui/views/controls/button/label_button.cc
+index 6fc12bbc6f9b..a82c282a7c31 100644
+--- ui/views/controls/button/label_button.cc
++++ ui/views/controls/button/label_button.cc
+@@ -188,6 +188,7 @@ gfx::Size LabelButton::CalculatePreferredSize() const {
+   Label label(GetText(), {label_->font_list()});
+   label.SetLineHeight(label_->line_height());
+   label.SetShadows(label_->shadows());
++  label.SetDrawStringsFlags(label_->draw_strings_flags());
+ 
+   if (style_ == STYLE_BUTTON) {
+     // Some text appears wider when rendered normally than when rendered bold.
+@@ -398,6 +399,12 @@ std::unique_ptr<views::InkDropHighlight> LabelButton::CreateInkDropHighlight()
+                    gfx::RectF(image()->GetMirroredBounds()).CenterPoint());
+ }
+ 
++void LabelButton::SetFontList(const gfx::FontList& font_list) {
++  cached_normal_font_list_ = font_list;
++  cached_default_button_font_list_ = font_list;
++  label_->SetFontList(cached_normal_font_list_);
++}
++
+ void LabelButton::StateChanged(ButtonState old_state) {
+   const gfx::Size previous_image_size(image_->GetPreferredSize());
+   UpdateImage();
+diff --git ui/views/controls/button/label_button.h ui/views/controls/button/label_button.h
+index b2323dae3d9e..4b9546ca1a61 100644
+--- ui/views/controls/button/label_button.h
++++ ui/views/controls/button/label_button.h
+@@ -102,6 +102,9 @@ class VIEWS_EXPORT LabelButton : public Button, public NativeThemeDelegate {
+   std::unique_ptr<InkDropRipple> CreateInkDropRipple() const override;
+   std::unique_ptr<InkDropHighlight> CreateInkDropHighlight() const override;
+ 
++  // Sets the font list used by this button.
++  void SetFontList(const gfx::FontList& font_list);
++
+  protected:
+   ImageView* image() const { return image_; }
+   Label* label() const;
+diff --git ui/views/controls/button/menu_button.cc ui/views/controls/button/menu_button.cc
+index 536fd0159e28..4c6402a29596 100644
+--- ui/views/controls/button/menu_button.cc
++++ ui/views/controls/button/menu_button.cc
+@@ -178,7 +178,7 @@ bool MenuButton::IsTriggerableEventType(const ui::Event& event) {
+ gfx::Size MenuButton::CalculatePreferredSize() const {
+   gfx::Size prefsize = LabelButton::CalculatePreferredSize();
+   if (show_menu_marker_) {
+-    prefsize.Enlarge(menu_marker_->width() + kMenuMarkerPaddingLeft +
++    prefsize.Enlarge(menu_marker_->width() + GetMarkerPaddingLeft() +
+                          kMenuMarkerPaddingRight,
+                      0);
+   }
+@@ -311,7 +311,7 @@ gfx::Rect MenuButton::GetChildAreaBounds() {
+   gfx::Size s = size();
+ 
+   if (show_menu_marker_) {
+-    s.set_width(s.width() - menu_marker_->width() - kMenuMarkerPaddingLeft -
++    s.set_width(s.width() - menu_marker_->width() - GetMarkerPaddingLeft() -
+                 kMenuMarkerPaddingRight);
+   }
+ 
+@@ -408,4 +408,10 @@ int MenuButton::GetMaximumScreenXCoordinate() {
+   return monitor_bounds.right() - 1;
+ }
+ 
++int MenuButton::GetMarkerPaddingLeft() const {
++  if (!image()->GetImage().isNull() || !label()->text().empty())
++    return kMenuMarkerPaddingLeft;
++  return kMenuMarkerPaddingRight;
++}
++
+ }  // namespace views
+diff --git ui/views/controls/button/menu_button.h ui/views/controls/button/menu_button.h
+index 8fb11e1cf9cb..bd2951bd948b 100644
+--- ui/views/controls/button/menu_button.h
++++ ui/views/controls/button/menu_button.h
+@@ -57,6 +57,9 @@ class VIEWS_EXPORT MenuButton : public LabelButton {
+   ~MenuButton() override;
+ 
+   bool show_menu_marker() const { return show_menu_marker_; }
++  void set_show_menu_marker(bool show_menu_marker) {
++    show_menu_marker_ = show_menu_marker;
++  }
+   void set_menu_marker(const gfx::ImageSkia* menu_marker) {
+     menu_marker_ = menu_marker;
+   }
+@@ -121,6 +124,9 @@ class VIEWS_EXPORT MenuButton : public LabelButton {
+   // use this to make sure a menu is never shown off screen.
+   int GetMaximumScreenXCoordinate();
+ 
++  // Only apply left padding if there's an image or label.
++  int GetMarkerPaddingLeft() const;
++
+   // We use a time object in order to keep track of when the menu was closed.
+   // The time is used for simulating menu behavior for the menu button; that
+   // is, if the menu is shown and the button is pressed, we need to close the
+diff --git ui/views/controls/label.cc ui/views/controls/label.cc
+index 5fb2a8667c81..f725a0209267 100644
+--- ui/views/controls/label.cc
++++ ui/views/controls/label.cc
+@@ -25,6 +25,7 @@
+ #include "ui/gfx/color_utils.h"
+ #include "ui/gfx/geometry/insets.h"
+ #include "ui/gfx/text_elider.h"
++#include "ui/gfx/text_utils.h"
+ #include "ui/native_theme/native_theme.h"
+ #include "ui/strings/grit/ui_strings.h"
+ #include "ui/views/background.h"
+@@ -41,6 +42,20 @@ namespace {
+ gfx::Insets NonBorderInsets(const Label& label) {
+   return label.GetInsets() - label.View::GetInsets();
+ }
++
++// Strips accelerator character prefixes in |text| if needed, based on |flags|.
++// Returns a range in |text| to underline or Range::InvalidRange() if
++// underlining is not needed.
++gfx::Range StripAcceleratorChars(int flags, base::string16* text) {
++  if (flags & (gfx::Canvas::SHOW_PREFIX | gfx::Canvas::HIDE_PREFIX)) {
++    int char_pos = -1;
++    int char_span = 0;
++    *text = gfx::RemoveAcceleratorChar(*text, '&', &char_pos, &char_span);
++    if ((flags & gfx::Canvas::SHOW_PREFIX) && char_pos != -1)
++      return gfx::Range(char_pos, char_pos + char_span);
++  }
++  return gfx::Range::InvalidRange();
++}
+ }  // namespace
+ 
+ const char Label::kViewClassName[] = "Label";
+@@ -223,6 +238,15 @@ void Label::SetElideBehavior(gfx::ElideBehavior elide_behavior) {
+   ResetLayout();
+ }
+ 
++void Label::SetDrawStringsFlags(int flags) {
++  if (draw_strings_flags_ == flags)
++    return;
++  is_first_paint_text_ = true;
++  draw_strings_flags_ = flags;
++  full_text_->SetDrawStringsFlags(draw_strings_flags_);
++  ResetLayout();
++}
++
+ void Label::SetTooltipText(const base::string16& tooltip_text) {
+   DCHECK(handles_tooltips_);
+   tooltip_text_ = tooltip_text;
+@@ -447,7 +471,19 @@ std::unique_ptr<gfx::RenderText> Label::CreateRenderText() const {
+   render_text->SetFontList(font_list());
+   render_text->set_shadows(shadows());
+   render_text->SetCursorEnabled(false);
+-  render_text->SetText(text());
++
++  if (draw_strings_flags_ != 0) {
++    base::string16 text_str = text();
++    gfx::Range range = StripAcceleratorChars(draw_strings_flags_, &text_str);
++    render_text->SetText(text_str);
++    if (range.IsValid()) {
++      render_text->SetDisplayRect(bounds());
++      render_text->ApplyStyle(gfx::UNDERLINE, true, range);
++    }
++  } else {
++    render_text->SetText(text());
++  }
++
+   render_text->SetMultiline(multi_line());
+   render_text->SetMaxLines(multi_line() ? max_lines() : 0);
+   render_text->SetWordWrapBehavior(full_text_->word_wrap_behavior());
+diff --git ui/views/controls/label.h ui/views/controls/label.h
+index 1cee72792720..c212350b706f 100644
+--- ui/views/controls/label.h
++++ ui/views/controls/label.h
+@@ -151,6 +151,10 @@ class VIEWS_EXPORT Label : public View,
+   void SetElideBehavior(gfx::ElideBehavior elide_behavior);
+   gfx::ElideBehavior elide_behavior() const { return elide_behavior_; }
+ 
++  // Get or set the flags that control display of accelerator characters.
++  void SetDrawStringsFlags(int flags);
++  int draw_strings_flags() const { return draw_strings_flags_; }
++
+   // Sets the tooltip text.  Default behavior for a label (single-line) is to
+   // show the full text if it is wider than its bounds.  Calling this overrides
+   // the default behavior and lets you set a custom tooltip.  To revert to
+@@ -365,6 +369,7 @@ class VIEWS_EXPORT Label : public View,
+   bool collapse_when_hidden_;
+   int fixed_width_;
+   int max_width_;
++  int draw_strings_flags_ = 0;
+ 
+   // TODO(ckocagil): Remove is_first_paint_text_ before crbug.com/441028 is
+   // closed.
+diff --git ui/views/controls/menu/menu_controller.cc ui/views/controls/menu/menu_controller.cc
+index 9389f25f034d..60f546b55951 100644
+--- ui/views/controls/menu/menu_controller.cc
++++ ui/views/controls/menu/menu_controller.cc
+@@ -2261,8 +2261,13 @@ MenuItemView* MenuController::FindNextSelectableMenuItem(
+ 
+ void MenuController::OpenSubmenuChangeSelectionIfCan() {
+   MenuItemView* item = pending_state_.item;
+-  if (!item->HasSubmenu() || !item->enabled())
++  if (!item->HasSubmenu() || !item->enabled() || !item->GetParentMenuItem()) {
++    MenuItemView* submenu_item =
++        item->GetParentMenuItem() ? item->GetParentMenuItem() : item;
++    submenu_item->GetDelegate()->OnUnhandledOpenSubmenu(submenu_item,
++                                                        base::i18n::IsRTL());
+     return;
++  }
+   MenuItemView* to_select = NULL;
+   if (item->GetSubmenu()->GetMenuItemCount() > 0)
+     to_select = FindInitialSelectableMenuItem(item, INCREMENT_SELECTION_DOWN);
+@@ -2277,8 +2282,10 @@ void MenuController::OpenSubmenuChangeSelectionIfCan() {
+ void MenuController::CloseSubmenu() {
+   MenuItemView* item = state_.item;
+   DCHECK(item);
+-  if (!item->GetParentMenuItem())
++  if (!item->GetParentMenuItem()) {
++    item->GetDelegate()->OnUnhandledCloseSubmenu(item, base::i18n::IsRTL());
+     return;
++  }
+   if (item->SubmenuIsShowing())
+     SetSelection(item, SELECTION_UPDATE_IMMEDIATELY);
+   else if (item->GetParentMenuItem()->GetParentMenuItem())
+diff --git ui/views/controls/menu/menu_delegate.h ui/views/controls/menu/menu_delegate.h
+index 4dea63f9f286..ef50b710c5af 100644
+--- ui/views/controls/menu/menu_delegate.h
++++ ui/views/controls/menu/menu_delegate.h
+@@ -10,6 +10,7 @@
+ 
+ #include "base/logging.h"
+ #include "base/strings/string16.h"
++#include "third_party/skia/include/core/SkColor.h"
+ #include "ui/base/dragdrop/drag_drop_types.h"
+ #include "ui/base/dragdrop/os_exchange_data.h"
+ #include "ui/base/ui_base_types.h"
+@@ -76,6 +77,22 @@ class VIEWS_EXPORT MenuDelegate {
+   // it's disabled.
+   virtual bool GetShouldUseNormalForegroundColor(int command_id) const;
+ 
++  // Override the text color of a given menu item dependent on the |command_id|
++  // and its |is_hovered| state. |is_minor| will be true for accelerator text.
++  // Returns true if it chooses to override the color.
++  virtual bool GetTextColor(int command_id,
++                            bool is_minor,
++                            bool is_hovered,
++                            SkColor* override_color) const { return false; }
++
++  // Override the background color of a given menu item dependent on the
++  // |command_id| and its |is_hovered| state. Returns true if it chooses to
++  // override the color.
++  virtual bool GetBackgroundColor(int command_id,
++                                  bool is_hovered,
++                                  SkColor* override_color) const
++                                  { return false; }
++
+   // The tooltip shown for the menu item. This is invoked when the user
+   // hovers over the item, and no tooltip text has been set for that item.
+   virtual base::string16 GetTooltipText(int id,
+@@ -208,6 +225,11 @@ class VIEWS_EXPORT MenuDelegate {
+                                        bool* has_mnemonics,
+                                        MenuButton** button);
+ 
++  // Called on unhandled open/close submenu keyboard commands. |is_rtl| will be
++  // true if the menu is displaying a right-to-left language.
++  virtual void OnUnhandledOpenSubmenu(MenuItemView* menu, bool is_rtl) {}
++  virtual void OnUnhandledCloseSubmenu(MenuItemView* menu, bool is_rtl) {}
++
+   // Returns the max width menus can grow to be.
+   virtual int GetMaxWidthForMenu(MenuItemView* menu);
+ 
+diff --git ui/views/controls/menu/menu_item_view.cc ui/views/controls/menu/menu_item_view.cc
+index d90a8ec45fcf..0a7b0a9d2ea5 100644
+--- ui/views/controls/menu/menu_item_view.cc
++++ ui/views/controls/menu/menu_item_view.cc
+@@ -811,7 +811,12 @@ void MenuItemView::PaintButton(gfx::Canvas* canvas, PaintButtonMode mode) {
+   // only need the background when we want it to look different, as when we're
+   // selected.
+   ui::NativeTheme* native_theme = GetNativeTheme();
+-  if (render_selection) {
++  SkColor override_color;
++  if (delegate && delegate->GetBackgroundColor(GetCommand(),
++                                               render_selection,
++                                               &override_color)) {
++    canvas->DrawColor(override_color);
++  } else if (render_selection) {
+     gfx::Rect item_bounds(0, 0, width(), height());
+     AdjustBoundsForRTLUI(&item_bounds);
+ 
+@@ -900,6 +905,13 @@ void MenuItemView::PaintMinorText(gfx::Canvas* canvas, SkColor color) {
+ SkColor MenuItemView::GetTextColor(bool minor,
+                                    bool render_selection,
+                                    bool emphasized) const {
++  SkColor text_color;
++  const MenuDelegate *delegate = GetDelegate();
++  if (delegate && delegate->GetTextColor(GetCommand(), minor, render_selection,
++                                         &text_color)) {
++    return text_color;
++  }
++
+   ui::NativeTheme::ColorId color_id =
+       minor ? ui::NativeTheme::kColorId_MenuItemSubtitleColor
+             : ui::NativeTheme::kColorId_EnabledMenuItemForegroundColor;
+diff --git ui/views/controls/menu/menu_model_adapter.cc ui/views/controls/menu/menu_model_adapter.cc
+index 06a9d3cfda9b..c602a13efd6a 100644
+--- ui/views/controls/menu/menu_model_adapter.cc
++++ ui/views/controls/menu/menu_model_adapter.cc
+@@ -245,6 +245,77 @@ void MenuModelAdapter::SelectionChanged(MenuItemView* menu) {
+   NOTREACHED();
+ }
+ 
++MenuItemView* MenuModelAdapter::GetSiblingMenu(MenuItemView* menu,
++                                               const gfx::Point& screen_point,
++                                               MenuAnchorPosition* anchor,
++                                               bool* has_mnemonics,
++                                               MenuButton** button) {
++  // Look up the menu model for this menu.
++  const std::map<MenuItemView*, ui::MenuModel*>::const_iterator map_iterator =
++      menu_map_.find(menu);
++  if (map_iterator != menu_map_.end()) {
++    map_iterator->second->MouseOutsideMenu(screen_point);
++    return nullptr;
++  }
++
++  NOTREACHED();
++  return nullptr;
++}
++
++void MenuModelAdapter::OnUnhandledOpenSubmenu(MenuItemView* menu,
++                                              bool is_rtl) {
++  // Look up the menu model for this menu.
++  const std::map<MenuItemView*, ui::MenuModel*>::const_iterator map_iterator =
++      menu_map_.find(menu);
++  if (map_iterator != menu_map_.end()) {
++    map_iterator->second->UnhandledOpenSubmenu(is_rtl);
++    return;
++  }
++
++  NOTREACHED();
++}
++
++void MenuModelAdapter::OnUnhandledCloseSubmenu(MenuItemView* menu,
++                                               bool is_rtl) {
++  // Look up the menu model for this menu.
++  const std::map<MenuItemView*, ui::MenuModel*>::const_iterator map_iterator =
++      menu_map_.find(menu);
++  if (map_iterator != menu_map_.end()) {
++    map_iterator->second->UnhandledCloseSubmenu(is_rtl);
++    return;
++  }
++
++  NOTREACHED();
++}
++
++bool MenuModelAdapter::GetTextColor(int command_id,
++                                    bool is_minor,
++                                    bool is_hovered,
++                                    SkColor* override_color) const {
++  ui::MenuModel* model = menu_model_;
++  int index = 0;
++  if (ui::MenuModel::GetModelAndIndexForCommandId(command_id, &model, &index))
++    return model->GetTextColor(index, is_minor, is_hovered, override_color);
++
++  NOTREACHED();
++  return false;
++}
++
++bool MenuModelAdapter::GetBackgroundColor(int command_id,
++                                          bool is_hovered,
++                                          SkColor* override_color) const {
++  if (command_id == -1)
++    return menu_model_->GetBackgroundColor(-1, is_hovered, override_color);
++
++  ui::MenuModel* model = menu_model_;
++  int index = 0;
++  if (ui::MenuModel::GetModelAndIndexForCommandId(command_id, &model, &index))
++    return model->GetBackgroundColor(index, is_hovered, override_color);
++
++  NOTREACHED();
++  return false;
++}
++
+ void MenuModelAdapter::WillShowMenu(MenuItemView* menu) {
+   // Look up the menu model for this menu.
+   const std::map<MenuItemView*, ui::MenuModel*>::const_iterator map_iterator =
+diff --git ui/views/controls/menu/menu_model_adapter.h ui/views/controls/menu/menu_model_adapter.h
+index 0ac493c3c6a0..741769e90eb0 100644
+--- ui/views/controls/menu/menu_model_adapter.h
++++ ui/views/controls/menu/menu_model_adapter.h
+@@ -76,6 +76,20 @@ class VIEWS_EXPORT MenuModelAdapter : public MenuDelegate {
+   bool IsCommandVisible(int id) const override;
+   bool IsItemChecked(int id) const override;
+   void SelectionChanged(MenuItemView* menu) override;
++  MenuItemView* GetSiblingMenu(MenuItemView* menu,
++                               const gfx::Point& screen_point,
++                               MenuAnchorPosition* anchor,
++                               bool* has_mnemonics,
++                               MenuButton** button) override;
++  void OnUnhandledOpenSubmenu(MenuItemView* menu, bool is_rtl) override;
++  void OnUnhandledCloseSubmenu(MenuItemView* menu, bool is_rtl) override;
++  bool GetTextColor(int command_id,
++                    bool is_minor,
++                    bool is_hovered,
++                    SkColor* override_color) const override;
++  bool GetBackgroundColor(int command_id,
++                          bool is_hovered,
++                          SkColor* override_color) const override;
+   void WillShowMenu(MenuItemView* menu) override;
+   void WillHideMenu(MenuItemView* menu) override;
+   void OnMenuClosed(MenuItemView* menu) override;
+diff --git ui/views/controls/menu/menu_scroll_view_container.cc ui/views/controls/menu/menu_scroll_view_container.cc
+index fc9e3426f7c6..d0513a05eff1 100644
+--- ui/views/controls/menu/menu_scroll_view_container.cc
++++ ui/views/controls/menu/menu_scroll_view_container.cc
+@@ -184,6 +184,11 @@ MenuScrollViewContainer::MenuScrollViewContainer(SubmenuView* content_view)
+   scroll_view_ = new MenuScrollView(content_view);
+   AddChildView(scroll_view_);
+ 
++  SkColor override_color;
++  MenuDelegate* delegate = content_view_->GetMenuItem()->GetDelegate();
++  if (delegate && delegate->GetBackgroundColor(-1, false, &override_color))
++    SetBackground(views::CreateSolidBackground(override_color));
++
+   arrow_ = BubbleBorderTypeFromAnchor(
+       content_view_->GetMenuItem()->GetMenuController()->GetAnchorPosition());
+ 
+diff --git ui/views/test/ui_controls_factory_desktop_aurax11.cc ui/views/test/ui_controls_factory_desktop_aurax11.cc
+index 875ac82283b3..44424b2ce138 100644
+--- ui/views/test/ui_controls_factory_desktop_aurax11.cc
++++ ui/views/test/ui_controls_factory_desktop_aurax11.cc
+@@ -140,10 +140,6 @@ class UIControlsDesktopX11 : public UIControlsAura {
+         aura::test::QueryLatestMousePositionRequestInHost(host);
+     host->ConvertPixelsToDIP(&root_current_location);
+ 
+-    auto* screen = views::test::TestDesktopScreenX11::GetInstance();
+-    DCHECK_EQ(screen, display::Screen::GetScreen());
+-    screen->set_cursor_screen_point(gfx::Point(screen_x, screen_y));
+-
+     if (root_location != root_current_location && button_down_mask == 0) {
+       // Move the cursor because EnterNotify/LeaveNotify are generated with the
+       // current mouse position as a result of XGrabPointer()
+diff --git ui/views/view.h ui/views/view.h
+index f3075731dd61..5cb0d7211560 100644
+--- ui/views/view.h
++++ ui/views/view.h
+@@ -18,6 +18,7 @@
+ #include "base/i18n/rtl.h"
+ #include "base/logging.h"
+ #include "base/macros.h"
++#include "base/supports_user_data.h"
+ #include "build/build_config.h"
+ #include "ui/accessibility/ax_enums.h"
+ #include "ui/base/accelerators/accelerator.h"
+@@ -118,7 +119,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
+                           public ui::AcceleratorTarget,
+                           public ui::EventTarget,
+                           public ui::EventHandler,
+-                          public ui::PropertyHandler {
++                          public ui::PropertyHandler,
++                          public base::SupportsUserData {
+  public:
+   using Views = std::vector<View*>;
+ 

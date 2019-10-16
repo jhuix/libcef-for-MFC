@@ -1,0 +1,69 @@
+diff --git content/browser/renderer_host/browser_compositor_view_mac.h content/browser/renderer_host/browser_compositor_view_mac.h
+index 81376ab57c4b..364305777492 100644
+--- content/browser/renderer_host/browser_compositor_view_mac.h
++++ content/browser/renderer_host/browser_compositor_view_mac.h
+@@ -51,11 +51,13 @@ class CONTENT_EXPORT BrowserCompositorMac : public DelegatedFrameHostClient {
+ 
+   // These will not return nullptr until Destroy is called.
+   DelegatedFrameHost* GetDelegatedFrameHost();
++  ui::Layer* GetRootLayer() { return root_layer_.get(); }
+ 
+   // Ensure that the currect compositor frame be cleared (even if it is
+   // potentially visible).
+   void ClearCompositorFrame();
+ 
++  ui::Compositor* GetCompositor();
+   gfx::AcceleratedWidget GetAcceleratedWidget();
+   void DidCreateNewRendererCompositorFrameSink(
+       viz::mojom::CompositorFrameSinkClient* renderer_compositor_frame_sink);
+diff --git content/browser/renderer_host/browser_compositor_view_mac.mm content/browser/renderer_host/browser_compositor_view_mac.mm
+index 8e98fb37c1d4..8dc887eac61b 100644
+--- content/browser/renderer_host/browser_compositor_view_mac.mm
++++ content/browser/renderer_host/browser_compositor_view_mac.mm
+@@ -214,6 +214,12 @@ BrowserCompositorMac::~BrowserCompositorMac() {
+     g_spare_recyclable_compositors.Get().clear();
+ }
+ 
++ui::Compositor* BrowserCompositorMac::GetCompositor() {
++  if (recyclable_compositor_)
++    return recyclable_compositor_->compositor();
++  return nullptr;
++}
++
+ gfx::AcceleratedWidget BrowserCompositorMac::GetAcceleratedWidget() {
+   if (recyclable_compositor_) {
+     return recyclable_compositor_->accelerated_widget_mac()
+@@ -473,10 +479,16 @@ void BrowserCompositorMac::GetViewProperties(
+   NSView* ns_view =
+       accelerated_widget_mac_ns_view_->AcceleratedWidgetGetNSView();
+   if (bounds_in_dip) {
+-    NSSize dip_ns_size = [ns_view bounds].size;
+-    *bounds_in_dip = gfx::Size(dip_ns_size.width, dip_ns_size.height);
++    if (ns_view) {
++      NSSize dip_ns_size = [ns_view bounds].size;
++      *bounds_in_dip = gfx::Size(dip_ns_size.width, dip_ns_size.height);
++    } else {
++      // |ns_view| will be nullptr for CEF.
++      *bounds_in_dip = root_layer_->bounds().size();
++    }
+   }
+   if (scale_factor || color_space) {
++    // TODO(cef): Return values from CEF callbacks here.
+     display::Display display =
+         display::Screen::GetScreen()->GetDisplayNearestView(ns_view);
+     if (scale_factor)
+diff --git ui/accelerated_widget_mac/accelerated_widget_mac.mm ui/accelerated_widget_mac/accelerated_widget_mac.mm
+index 7ff59beee63c..48efe5ac93fa 100644
+--- ui/accelerated_widget_mac/accelerated_widget_mac.mm
++++ ui/accelerated_widget_mac/accelerated_widget_mac.mm
+@@ -66,6 +66,10 @@ void AcceleratedWidgetMac::SetNSView(AcceleratedWidgetMacNSView* view) {
+   DCHECK(view && !view_);
+   view_ = view;
+ 
++  // Will be nullptr for CEF.
++  if (!view_->AcceleratedWidgetGetNSView())
++    return;
++
+   CALayer* background_layer = [view_->AcceleratedWidgetGetNSView() layer];
+   DCHECK(background_layer);
+   [flipped_layer_ setBounds:[background_layer bounds]];

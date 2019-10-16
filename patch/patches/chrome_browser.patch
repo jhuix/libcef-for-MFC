@@ -1,0 +1,31 @@
+diff --git chrome/browser/BUILD.gn chrome/browser/BUILD.gn
+index c61e8b60b4c4..694ebd91349b 100644
+--- chrome/browser/BUILD.gn
++++ chrome/browser/BUILD.gn
+@@ -7,6 +7,7 @@ import("//build/config/crypto.gni")
+ import("//build/config/features.gni")
+ import("//build/config/ui.gni")
+ import("//build/split_static_library.gni")
++import("//cef/libcef/features/features.gni")
+ import("//chrome/common/features.gni")
+ import("//components/feature_engagement/features.gni")
+ import("//components/nacl/features.gni")
+@@ -1586,6 +1587,7 @@ split_static_library("browser") {
+     "//base:i18n",
+     "//base/allocator:features",
+     "//cc",
++    "//cef/libcef/features",
+     "//chrome:extra_resources",
+     "//chrome:resources",
+     "//chrome:strings",
+@@ -1837,6 +1839,10 @@ split_static_library("browser") {
+     "//ui/web_dialogs",
+   ]
+ 
++  if (enable_cef) {
++    configs += [ "//cef/libcef/features:config" ]
++  }
++
+   if (is_android) {
+     sources += [
+       "after_startup_task_utils_android.cc",

@@ -1,0 +1,16 @@
+diff --git net/url_request/url_request.h net/url_request/url_request.h
+index 60fbf78c7886..9597011602ba 100644
+--- net/url_request/url_request.h
++++ net/url_request/url_request.h
+@@ -693,10 +693,10 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
+   // called with a response from the server.
+   void SetResponseHeadersCallback(ResponseHeadersCallback callback);
+ 
+- protected:
+   // Allow the URLRequestJob class to control the is_pending() flag.
+   void set_is_pending(bool value) { is_pending_ = value; }
+ 
++ protected:
+   // Allow the URLRequestJob class to set our status too.
+   void set_status(URLRequestStatus status);
+ 

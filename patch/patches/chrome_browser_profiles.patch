@@ -1,0 +1,116 @@
+diff --git chrome/browser/profiles/incognito_helpers.cc chrome/browser/profiles/incognito_helpers.cc
+index ce4f72b98a05..f7d57b854399 100644
+--- chrome/browser/profiles/incognito_helpers.cc
++++ chrome/browser/profiles/incognito_helpers.cc
+@@ -7,19 +7,42 @@
+ #include "chrome/browser/profiles/profile.h"
+ 
+ namespace chrome {
++  
++namespace {
++BrowserContextIncognitoHelper* g_helper = nullptr;
++}  // namespace
++
++void SetBrowserContextIncognitoHelper(BrowserContextIncognitoHelper* helper) {
++  g_helper = helper;
++}
+ 
+ content::BrowserContext* GetBrowserContextRedirectedInIncognito(
+     content::BrowserContext* context) {
++  if (g_helper) {
++    content::BrowserContext* new_context =
++        g_helper->GetBrowserContextRedirectedInIncognito(context);
++    if (new_context)
++      return new_context;
++  }
++
+   return static_cast<Profile*>(context)->GetOriginalProfile();
+ }
+ 
+ const content::BrowserContext* GetBrowserContextRedirectedInIncognito(
+     const content::BrowserContext* context) {
+-  return static_cast<const Profile*>(context)->GetOriginalProfile();
++  return GetBrowserContextRedirectedInIncognito(
++      const_cast<content::BrowserContext*>(context));
+ }
+ 
+ content::BrowserContext* GetBrowserContextOwnInstanceInIncognito(
+     content::BrowserContext* context) {
++  if (g_helper) {
++    content::BrowserContext* new_context =
++        g_helper->GetBrowserContextOwnInstanceInIncognito(context);
++    if (new_context)
++      return new_context;
++  }
++
+   return context;
+ }
+ 
+diff --git chrome/browser/profiles/incognito_helpers.h chrome/browser/profiles/incognito_helpers.h
+index e8e76ce5b954..1dd338dd0142 100644
+--- chrome/browser/profiles/incognito_helpers.h
++++ chrome/browser/profiles/incognito_helpers.h
+@@ -11,6 +11,19 @@ class BrowserContext;
+ 
+ namespace chrome {
+ 
++class BrowserContextIncognitoHelper {
++ public:
++  virtual content::BrowserContext* GetBrowserContextRedirectedInIncognito(
++      content::BrowserContext* context) = 0;
++  virtual content::BrowserContext* GetBrowserContextOwnInstanceInIncognito(
++      content::BrowserContext* context) = 0;
++ protected:
++  virtual ~BrowserContextIncognitoHelper() {}
++};
++
++// Allow CEF to hook the below methods.
++void SetBrowserContextIncognitoHelper(BrowserContextIncognitoHelper* helper);
++
+ // Returns the original browser context even for Incognito contexts.
+ content::BrowserContext* GetBrowserContextRedirectedInIncognito(
+     content::BrowserContext* context);
+diff --git chrome/browser/profiles/profile_manager.cc chrome/browser/profiles/profile_manager.cc
+index dcd20d5949af..23ba98b0fb7c 100644
+--- chrome/browser/profiles/profile_manager.cc
++++ chrome/browser/profiles/profile_manager.cc
+@@ -377,7 +377,7 @@ ProfileManager::ProfileManager(const base::FilePath& user_data_dir)
+       chrome::NOTIFICATION_BROWSER_CLOSE_CANCELLED,
+       content::NotificationService::AllSources());
+ 
+-  if (ProfileShortcutManager::IsFeatureEnabled() && !user_data_dir_.empty())
++  if (!user_data_dir_.empty() && ProfileShortcutManager::IsFeatureEnabled())
+     profile_shortcut_manager_.reset(ProfileShortcutManager::Create(
+                                     this));
+ }
+diff --git chrome/browser/profiles/profile_manager.h chrome/browser/profiles/profile_manager.h
+index 9c410dc3ba6d..219d42503fa7 100644
+--- chrome/browser/profiles/profile_manager.h
++++ chrome/browser/profiles/profile_manager.h
+@@ -93,7 +93,7 @@ class ProfileManager : public content::NotificationObserver,
+   // acceptable. Returns null if creation of the new profile fails.
+   // TODO(bauerb): Migrate calls from other code to GetProfileByPath(), then
+   // make this method private.
+-  Profile* GetProfile(const base::FilePath& profile_dir);
++  virtual Profile* GetProfile(const base::FilePath& profile_dir);
+ 
+   // Returns total number of profiles available on this machine.
+   size_t GetNumberOfProfiles();
+@@ -124,7 +124,7 @@ class ProfileManager : public content::NotificationObserver,
+ 
+   // Returns true if the profile pointer is known to point to an existing
+   // profile.
+-  bool IsValidProfile(const void* profile);
++  virtual bool IsValidProfile(const void* profile);
+ 
+   // Returns the directory where the first created profile is stored,
+   // relative to the user data directory currently in use.
+@@ -133,7 +133,7 @@ class ProfileManager : public content::NotificationObserver,
+   // Get the Profile last used (the Profile to which owns the most recently
+   // focused window) with this Chrome build. If no signed profile has been
+   // stored in Local State, hand back the Default profile.
+-  Profile* GetLastUsedProfile(const base::FilePath& user_data_dir);
++  virtual Profile* GetLastUsedProfile(const base::FilePath& user_data_dir);
+ 
+   // Get the path of the last used profile, or if that's undefined, the default
+   // profile.

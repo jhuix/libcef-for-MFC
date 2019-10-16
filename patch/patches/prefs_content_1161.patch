@@ -1,0 +1,48 @@
+diff --git content/public/common/common_param_traits_macros.h content/public/common/common_param_traits_macros.h
+index a714130a50d8..2a835d7282b3 100644
+--- content/public/common/common_param_traits_macros.h
++++ content/public/common/common_param_traits_macros.h
+@@ -187,6 +187,7 @@ IPC_STRUCT_TRAITS_BEGIN(content::WebPreferences)
+   IPC_STRUCT_TRAITS_MEMBER(main_frame_resizes_are_orientation_changes)
+   IPC_STRUCT_TRAITS_MEMBER(initialize_at_minimum_page_scale)
+   IPC_STRUCT_TRAITS_MEMBER(smart_insert_delete_enabled)
++  IPC_STRUCT_TRAITS_MEMBER(base_background_color)
+   IPC_STRUCT_TRAITS_MEMBER(cookie_enabled)
+   IPC_STRUCT_TRAITS_MEMBER(navigate_on_drag_drop)
+   IPC_STRUCT_TRAITS_MEMBER(spatial_navigation_enabled)
+diff --git content/public/common/web_preferences.cc content/public/common/web_preferences.cc
+index dea164853646..f3b69c6b81c9 100644
+--- content/public/common/web_preferences.cc
++++ content/public/common/web_preferences.cc
+@@ -178,6 +178,7 @@ WebPreferences::WebPreferences()
+       spatial_navigation_enabled(false),
+       use_solid_color_scrollbars(false),
+       navigate_on_drag_drop(true),
++      base_background_color(0xFFFFFFFF),  // Color::white
+       v8_cache_options(V8_CACHE_OPTIONS_DEFAULT),
+       record_whole_document(false),
+       save_previous_document_resources(SavePreviousDocumentResources::NEVER),
+diff --git content/public/common/web_preferences.h content/public/common/web_preferences.h
+index 49be57cd2aad..417be7a55184 100644
+--- content/public/common/web_preferences.h
++++ content/public/common/web_preferences.h
+@@ -198,6 +198,7 @@ struct CONTENT_EXPORT WebPreferences {
+   bool spatial_navigation_enabled;
+   bool use_solid_color_scrollbars;
+   bool navigate_on_drag_drop;
++  uint32_t base_background_color;
+   V8CacheOptions v8_cache_options;
+   bool record_whole_document;
+   SavePreviousDocumentResources save_previous_document_resources;
+diff --git content/renderer/render_view_impl.cc content/renderer/render_view_impl.cc
+index fae44e8b7e3e..efaa882cf109 100644
+--- content/renderer/render_view_impl.cc
++++ content/renderer/render_view_impl.cc
+@@ -1263,6 +1263,7 @@ void RenderViewImpl::ApplyWebPreferencesInternal(
+     blink::WebView* web_view,
+     CompositorDependencies* compositor_deps) {
+   ApplyWebPreferences(prefs, web_view);
++  web_view->SetBaseBackgroundColor(prefs.base_background_color);
+ }
+ 
+ void RenderViewImpl::OnForceRedraw(const ui::LatencyInfo& latency_info) {
