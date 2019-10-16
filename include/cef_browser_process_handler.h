@@ -38,6 +38,10 @@
 #define CEF_INCLUDE_CEF_BROWSER_PROCESS_HANDLER_H_
 #pragma once
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 #include "include/cef_base.h"
 #include "include/cef_command_line.h"
 #include "include/cef_print_handler.h"
@@ -101,6 +105,10 @@ class CefBrowserProcessHandler : public virtual CefBaseRefCounted {
   ///
   /*--cef()--*/
   virtual void OnScheduleMessagePumpWork(int64 delay_ms) {}
+#if defined(OS_WIN)
+  virtual bool OnPreTranslateMessage(const MSG* msg) { return false; }
+  virtual void OnPreIdleWork() {}
+#endif
 };
 
 #endif  // CEF_INCLUDE_CEF_BROWSER_PROCESS_HANDLER_H_

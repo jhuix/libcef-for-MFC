@@ -1589,10 +1589,15 @@ CefRefPtr<CefFrame> CefBrowserHostImpl::GetFrameForRequest(
       content::ResourceRequestInfo::ForRequest(request);
   if (!info)
     return nullptr;
-  // The value of |IsMainFrame| is unreliable when |IsDownload| returns true.
+
+  // The value of |IsMainFrame| is unreliable in these cases.
+  const bool is_main_frame_state_flaky =
+      info->IsDownload() ||
+      info->GetResourceType() == content::RESOURCE_TYPE_XHR;
+
   return GetOrCreateFrame(info->GetRenderFrameID(), info->GetFrameTreeNodeId(),
                           CefFrameHostImpl::kUnspecifiedFrameId,
-                          info->IsMainFrame(), info->IsDownload(),
+                          info->IsMainFrame(), is_main_frame_state_flaky,
                           base::string16(), GURL());
 }
 

@@ -41,6 +41,10 @@ class CefBrowserProcessHandlerCToCpp
       CefRefPtr<CefListValue> extra_info) override;
   CefRefPtr<CefPrintHandler> GetPrintHandler() override;
   void OnScheduleMessagePumpWork(int64 delay_ms) override;
+#if defined(OS_WIN)
+  bool OnPreTranslateMessage(const MSG* msg) override;
+  void OnPreIdleWork() override;
+#endif
 };
 
 #endif  // CEF_LIBCEF_DLL_CTOCPP_BROWSER_PROCESS_HANDLER_CTOCPP_H_

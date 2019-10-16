@@ -91,6 +91,30 @@ void CefBrowserProcessHandlerCToCpp::OnScheduleMessagePumpWork(int64 delay_ms) {
   _struct->on_schedule_message_pump_work(_struct, delay_ms);
 }
 
+#if defined(OS_WIN)
+bool CefBrowserProcessHandlerCToCpp::OnPreTranslateMessage(const MSG* msg) {
+  cef_browser_process_handler_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, on_pre_translate_message))
+    return false;
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  return _struct->on_pre_translate_message(_struct, msg);
+}
+
+void CefBrowserProcessHandlerCToCpp::OnPreIdleWork() {
+  cef_browser_process_handler_t* _struct = GetStruct();
+  if (CEF_MEMBER_MISSING(_struct, on_pre_idle_work))
+    return;
+
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  // Execute
+  _struct->on_pre_idle_work(_struct);
+}
+#endif
+
 // CONSTRUCTOR - Do not edit by hand.
 
 CefBrowserProcessHandlerCToCpp::CefBrowserProcessHandlerCToCpp() {}

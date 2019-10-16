@@ -9,6 +9,9 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 
+#if defined(OS_WIN)
+#include "base/message_loop/message_pump_win.h"
+#endif
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
 #endif
@@ -83,13 +86,42 @@ CefRefPtr<CefBrowserProcessHandler> GetBrowserProcessHandler() {
   return nullptr;
 }
 
+#if defined(OS_WIN)
+class MessagePumpExternalForUI : public base::MessagePumpForUI {
+ public:
+   MessagePumpExternalForUI(CefRefPtr<CefBrowserProcessHandler> handler)
+    : handler_(handler) {}
+
+ protected:
+   bool PreTranslateMessage(const MSG* msg) override {
+     if (handler_)
+       return handler_->OnPreTranslateMessage(msg);
+     return false;
+   }
+
+   void PreIdleWork() override {
+     if (handler_)
+       handler_->OnPreIdleWork();
+   }
+ private:
+  CefRefPtr<CefBrowserProcessHandler> handler_;
+};
+#endif
+
 std::unique_ptr<base::MessagePump> CreatePump() {
   const CefSettings& settings = CefContext::Get()->settings();
-  if (settings.external_message_pump) {
+  if (settings.external_message_pump > 0) {
     CefRefPtr<CefBrowserProcessHandler> handler = GetBrowserProcessHandler();
     if (handler)
       return base::WrapUnique(new MessagePumpExternal(0.01f, handler));
   }
+#if defined(OS_WIN)
+  else if(settings.external_message_pump < 0){
+    CefRefPtr<CefBrowserProcessHandler> handler = GetBrowserProcessHandler();
+    if (handler)
+      return base::WrapUnique(new MessagePumpExternalForUI(handler));
+  }
+#endif
 
   return base::MessageLoop::CreateMessagePumpForType(
       base::MessageLoop::TYPE_UI);

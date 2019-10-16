@@ -33,10 +33,28 @@ index 27ee7fe8155b..353a61c3badd 100644
    // if type_ is TYPE_CUSTOM and pump_ is null.
    MessagePumpFactoryCallback pump_factory_;
 diff --git base/message_loop/message_pump_win.cc base/message_loop/message_pump_win.cc
-index 6f48da1c744e..e427941bfd06 100644
+index 6f48da1c744e..0c0965cea7d1 100644
 --- base/message_loop/message_pump_win.cc
 +++ base/message_loop/message_pump_win.cc
-@@ -366,20 +366,28 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
+@@ -188,6 +188,7 @@ void MessagePumpForUI::DoRunLoop() {
+     if (more_work_is_plausible)
+       continue;
+ 
++    PreIdleWork();
+     more_work_is_plausible = state_->delegate->DoIdleWork();
+     if (state_->should_quit)
+       break;
+@@ -359,6 +360,9 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
+   if (msg.message == kMsgHaveWork && msg.hwnd == message_window_.hwnd())
+     return ProcessPumpReplacementMessage();
+ 
++  if (PreTranslateMessage(&msg))
++    return true;
++
+   TranslateMessage(&msg);
+   DispatchMessage(&msg);
+ 
+@@ -366,20 +370,28 @@ bool MessagePumpForUI::ProcessMessageHelper(const MSG& msg) {
  }
  
  bool MessagePumpForUI::ProcessPumpReplacementMessage() {
@@ -77,3 +95,17 @@ index 6f48da1c744e..e427941bfd06 100644
    DCHECK(!have_message || kMsgHaveWork != msg.message ||
           msg.hwnd != message_window_.hwnd());
  
+diff --git base/message_loop/message_pump_win.h base/message_loop/message_pump_win.h
+index f8a8557014b8..c656dd379c84 100644
+--- base/message_loop/message_pump_win.h
++++ base/message_loop/message_pump_win.h
+@@ -124,6 +124,9 @@ class BASE_EXPORT MessagePumpForUI : public MessagePumpWin {
+   void ScheduleWork() override;
+   void ScheduleDelayedWork(const TimeTicks& delayed_work_time) override;
+ 
++ protected:
++  virtual bool PreTranslateMessage(const MSG* msg) { return false; }
++  virtual void PreIdleWork() {}
+  private:
+   bool MessageCallback(
+       UINT message, WPARAM wparam, LPARAM lparam, LRESULT* result);

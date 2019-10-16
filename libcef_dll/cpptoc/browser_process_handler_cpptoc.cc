@@ -99,7 +99,32 @@ void CEF_CALLBACK browser_process_handler_on_schedule_message_pump_work(
   CefBrowserProcessHandlerCppToC::Get(self)->OnScheduleMessagePumpWork(
       delay_ms);
 }
+#if defined(OS_WIN)
+bool CEF_CALLBACK browser_process_handler_on_pre_translate_message(
+  struct _cef_browser_process_handler_t* self,
+  const MSG* msg) {
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
 
+  DCHECK(self);
+  if (!self)
+    return false;
+
+  // Execute
+  return CefBrowserProcessHandlerCppToC::Get(self)->OnPreTranslateMessage(msg);
+}
+
+void CEF_CALLBACK browser_process_handler_on_pre_idle_work(
+  struct _cef_browser_process_handler_t* self) {
+  // AUTO-GENERATED CONTENT - DELETE THIS COMMENT BEFORE MODIFYING
+
+  DCHECK(self);
+  if (!self)
+    return;
+
+  // Execute
+  CefBrowserProcessHandlerCppToC::Get(self)->OnPreIdleWork();
+}
+#endif
 }  // namespace
 
 // CONSTRUCTOR - Do not edit by hand.
@@ -114,6 +139,12 @@ CefBrowserProcessHandlerCppToC::CefBrowserProcessHandlerCppToC() {
   GetStruct()->get_print_handler = browser_process_handler_get_print_handler;
   GetStruct()->on_schedule_message_pump_work =
       browser_process_handler_on_schedule_message_pump_work;
+#if defined(OS_WIN)
+  GetStruct()->on_pre_translate_message =
+    browser_process_handler_on_pre_translate_message;
+  GetStruct()->on_pre_idle_work =
+    browser_process_handler_on_pre_idle_work;
+#endif
 }
 
 template <>

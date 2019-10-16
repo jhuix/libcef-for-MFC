@@ -40,6 +40,10 @@
 #define CEF_INCLUDE_CAPI_CEF_BROWSER_PROCESS_HANDLER_CAPI_H_
 #pragma once
 
+#if defined(OS_WIN)
+#include <windows.h>
+#endif
+
 #include "include/capi/cef_base_capi.h"
 #include "include/capi/cef_command_line_capi.h"
 #include "include/capi/cef_print_handler_capi.h"
@@ -112,6 +116,15 @@ typedef struct _cef_browser_process_handler_t {
   void(CEF_CALLBACK* on_schedule_message_pump_work)(
       struct _cef_browser_process_handler_t* self,
       int64 delay_ms);
+
+#if defined(OS_WIN)
+  bool(CEF_CALLBACK* on_pre_translate_message)(
+    struct _cef_browser_process_handler_t* self,
+    const MSG* msg);
+
+  void(CEF_CALLBACK* on_pre_idle_work)(
+    struct _cef_browser_process_handler_t* self);
+#endif
 } cef_browser_process_handler_t;
 
 #ifdef __cplusplus
